@@ -1,47 +1,57 @@
-# COVID Classification from Chest X-ray Images 🫁
+# COVID-19 Classifier from Chest X-ray Images 🫁
 
-## 🔗 Data Source
+## ⚠️ Python Version Requirement
 
-Article: [https://pmc.ncbi.nlm.nih.gov/articles/PMC7372265/](https://pmc.ncbi.nlm.nih.gov/articles/PMC7372265/)  
+Make sure you're using **Python 3.10 or lower**.  
+TensorFlow may not work correctly with Python 3.11+ without recompilation.
+
+## 🔗 Dataset Source
+
+Paper: [https://pmc.ncbi.nlm.nih.gov/articles/PMC7372265/](https://pmc.ncbi.nlm.nih.gov/articles/PMC7372265/)  
 Dataset: [https://github.com/PovilasVelicka/Covid.git](https://github.com/PovilasVelicka/Covid.git)
 
-1. Downloaded dataset archive with `images/` and `metadata.csv`, saved into `dataset/`
-2. After inspection: 584 cases of `Pneumonia/Viral/COVID-19`, only 22 cases of `No Finding`
-3. Decided to label all `Pneumonia/Viral/COVID-19` cases as `covid`, and all other cases (excluding `todo`, `Unknown`, `CT`) as `non_covid`
-4. Filtered only X-ray modality and views `PA` / `AP`; if insufficient — used `AP Supine` as fallback
-5. Final dataset structured into two classes: `covid` and `non_covid`
-6. Performed stratified split into `train`, `val`, and `test`
-7. Saved images to structured folders: `dataset/split/{train,val,test}/{covid,non_covid}`
-
----
+1. Downloaded image archive and `metadata.csv`, placed them in `dataset/`
+2. Analyzed structure: 584 `Pneumonia/Viral/COVID-19` cases, only 22 `No Finding` cases
+3. Decided to treat all COVID cases as `covid`, and others (excluding `todo`, `Unknown`, `CT`) as `non_covid`
+4. Filtered only `X-ray` modality and projections `PA`, `AP`, added `AP Supine` when lacking
+5. Created final dataset with two classes: `covid` and `non_covid`
+6. Applied stratified split into `train`, `val`, `test`
+7. Copied images into: `dataset/split/{train,val,test}/{covid,non_covid}`
 
 ## 🧠 Initial Model Training
 
-- Model: `ResNet50` pretrained on ImageNet
-- Output: single sigmoid neuron for binary classification
-- Training with `ImageDataGenerator` on `train` and `val`
-- Saved model as `.h5`
-- Saved training plots (`accuracy`, `loss`, `precision`, `recall`) into `plots/`
+- Initially used `ResNet50` pretrained on ImageNet
+- Model head: GlobalAveragePooling + Dense layers + `sigmoid` activation
+- Trained with `ImageDataGenerator` and saved in `.h5` format
 
-### 🛠 Initial issue:
+### 🛠 Issue Faced:
 
-The model always predicted `non_covid`. Root cause:
+The model initially predicted only `non_covid` because:
+- Class label for `covid` was `0`, and `non_covid` was `1`
+- During classification report analysis, the labels were interpreted in reverse
 
-- `covid` class was indexed as `0`, `non_covid` as `1`
-- However, the prediction reports were interpreted assuming the opposite
-
-✅ Fixed by explicitly setting:
+**Solution:** manually specified class order:  
 ```python
 classes = ["non_covid", "covid"]
 ```
-in all `ImageDataGenerator.flow_from_directory` calls.
 
----
+## 🔁 Model Update: Lightweight Architecture
 
-## 📉 Initial model performance (after 15 epochs)
+To improve training efficiency and deployment readiness,  
+`ResNet50` was replaced with **MobileNetV2**, a lightweight and fast architecture.
 
-- Overall accuracy: ~67%
-- Class-wise metrics:
+- `MobileNetV2` is also pretrained on ImageNet
+- Lower 2/3 of layers are frozen
+- Classification head: GAP → Dense → Dropout → Output
+
+## ⚙️ Training Details
+
+- Augmentations include: rotation, shift, zoom, flip, brightness
+- `class_weight` used to balance the classes
+- Callbacks: `ModelCheckpoint`, `EarlyStopping`, `ReduceLROnPlateau`
+- Training stops early if validation loss stagnates
+
+## 📉 Performance Before Fine-Tuning (15 Epochs)
 
 | Class       | Precision | Recall | F1-score |
 |-------------|-----------|--------|----------|
@@ -49,34 +59,18 @@ in all `ImageDataGenerator.flow_from_directory` calls.
 | `non_covid` | 0.95      | 0.51   | 0.67     |
 
 **Interpretation:**
-
-- The model is **sensitive to COVID** (high recall) but not very specific
-- It tends to classify many `non_covid` cases as `covid`
-- In real-world screening, this tradeoff (more false positives) can be acceptable
-
----
+- The model was **highly sensitive to COVID** (high recall)
+- But it often predicted `covid` even for `non_covid` (low precision)
 
 ## 🔁 Fine-tuning (continued training)
 
-Decided to fine-tune the model by unfreezing all layers:
+Fine-tuning was applied using `MobileNetV2`:
 
-### ⚙️ Fine-tuning steps (summary):
-
-- Loaded the trained `.h5` model
-- Unfroze all layers (`layer.trainable = True`)
-- Computed `class_weight` to handle class imbalance
 - Reduced learning rate to `1e-5`
-- Used callbacks: `ModelCheckpoint`, `EarlyStopping`
-- Training stopped early on epoch 4
+- Used class weights and callbacks
+- Training stopped on early epochs based on validation loss
 
-```
-Epoch 4: val_accuracy did not improve from 0.61856  
-Restoring model weights from the end of the best epoch: 1.
-```
-
----
-
-## 📊 Evaluation after fine-tuning:
+### 📊 Final Results After Fine-tuning:
 
 ```
 🔍 Classification Report:
@@ -88,23 +82,14 @@ Restoring model weights from the end of the best epoch: 1.
 ✅ Specificity (True Negative Rate non-COVID): 0.514
 ```
 
-**Interpretation:**
+## 🧪 How to Test the Model
 
-- The model can now **reliably detect COVID cases** (recall: 89%)
-- It rarely makes a mistake when predicting `covid` (precision: 90%)
-- It struggles more with identifying `non_covid`, which is acceptable in high-risk screening tasks
-- Performance is now **balanced**, and the model no longer defaults to a single class
-
----
-
-## 🧪 How to test the model
-
-1. Ensure the following files exist in the project folder:
-   - `app.py` — CLI prediction module
-   - `covid_classifier_resnet50.keras` — fine-tuned model
-   - `class_indices.json` — saved label mapping
-   - `covid.png` — sample COVID image
-   - `non_covid.png` — sample non-COVID image
+1. Make sure the directory contains:
+   - `app.py` — inference script
+   - `covid_classifier_mobilenetv2.keras` — trained model
+   - `class_indices.json` — class mapping
+   - `covid.png` — example of a COVID image
+   - `non_covid.png` — example of a non-COVID image
 
 2. Run predictions:
 
@@ -113,7 +98,7 @@ python app.py covid.png
 python app.py non_covid.png
 ```
 
-3. Example output:
+3. Sample Output:
 
 ```
 🔎 Result:
@@ -121,11 +106,9 @@ python app.py non_covid.png
   ➤ Confidence : 92.3%
 ```
 
----
+## 📦 Summary
 
-## 📦 Conclusion
-
-- Complete pipeline built: from data processing to model inference
-- Used `ResNet50`, Keras, class balancing with `class_weight`
-- Fine-tuning significantly improved COVID detection (recall ↑)
-- Ready-to-use `app.py` provided for local or web-based inference
+- Complete pipeline from dataset parsing to image prediction
+- Switched to efficient architecture (`MobileNetV2`) for speed and deployability
+- Model achieves high recall on COVID class, balanced with class weighting
+- Can be deployed or further fine-tuned on new X-ray data
