@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+.env
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+
+
+# Datasets & images
+dataset/
+
+# Not ingnore images
+!*.jpg
+!*.png
+!*.jpeg
+
+# IDEs
+.idea/
+.vscode/
+
+# Logs, outputs
+*.log
+*.csv
+outputs/
